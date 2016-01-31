@@ -23,13 +23,10 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
     @IBOutlet weak var noPhotoView: UIView!
 
+
     // Variables
     var selectedPin: Pins?
 
-    // Keep the changes. We will keep track of insertions, deletions, and updates.
-    var insertedIndexPaths: [NSIndexPath]!
-    var deletedIndexPaths: [NSIndexPath]!
-    var updatedIndexPaths: [NSIndexPath]!
 
 
     // ***** VIEW CONTROLLER MANAGEMENT  **** //
@@ -37,15 +34,13 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        print("selected Pin: \(selectedPin)")
-
         // Fetch the photos for the Pin
         do {
             try fetchedResultsController.performFetch()
-        } catch {
 
+        } catch {
             // Present an alert to let the user know we could not load photos
-            self.presentAlert("Unable to Load Photos for the Pin", includeOK: true )
+            presentAlert("Unable to Load Photos for the Pin", includeOK: true )
         }
 
         // Set the fetchedResultsController and collection delegates
@@ -55,22 +50,20 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
         // Fetch the Pin so that we can use the automatic core update to manage the new collection button
         do {
             try fetchedResultsControllerPin.performFetch()
-        } catch {
 
+        } catch {
             // Present an alert to let the user know we could not load photos
-            // self.presentAlert("Unable to Load the Pin", includeOK: true )  <<---- jnb
+            presentAlert("Unable to Load Photos for the Pin", includeOK: true )
         }
 
         // Set the fetchedresultscontroller for the pin
         fetchedResultsControllerPin.delegate = self
 
-        // If the photos are not loaded disable the new collection button
-        if selectedPin!.photosLoadedIndicator == false {
-            newCollectionButton.enabled = false
-        }
+        // Routine that checks if there are photos, if they are loaded or not
+        let photosLoaded = checkIfAllPhotosLoaded()
 
         // Check for pin having no photos. If none, display the view with the message and disable the new collection button
-        if selectedPin?.totalPhotos == 0 && selectedPin?.photosLoadedIndicator == true {
+        if selectedPin!.photosLoadedIndicator == true && selectedPin!.totalPhotos == 0 {
 
             // Show the view with message
             noPhotoView.hidden = false
@@ -83,13 +76,26 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
             // hide the view so the collection shows
             noPhotoView.hidden = true
 
-            // disable the New Collection Button
-            if selectedPin?.photosLoadedIndicator == true {
-                newCollectionButton.hidden = false
+            // Check if the photos have been loaded
+            if photosLoaded == "NotLoaded" || selectedPin!.photosLoadedIndicator == false {
+
+                // Disable the new collection button until all photos are loaded
+                newCollectionButton.enabled = false
+
+                // Disable the collection while the photos are loading
+                photoCollectionView.allowsSelection = false
+                photoCollectionView.scrollEnabled = false
+
+            } else {
+                // Disable the new collection button until all photos are loaded
                 newCollectionButton.enabled = true
+
+                // Disable the collection while the photos are loading
+                photoCollectionView.allowsSelection = true
+                photoCollectionView.scrollEnabled = true
             }
 
-            // Reload the collection
+            // Load the collection
             photoCollectionView.reloadData()
         }
 
@@ -103,6 +109,33 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
 
 
+    // Check to see if all the photos have been loaded.
+    func checkIfAllPhotosLoaded() -> String {
+        var count = 0
+        for photo in fetchedResultsController.fetchedObjects as! [Photos] {
+
+            if photo.flickrThumbnailPath != nil && photo.flickrThumbnailPath != " " {
+                if photo.documentsThumbnailFileName == nil || photo.documentsThumbnailFileName == " " {
+
+                    // return if there is a FLickr URL but the document has not been downloaded
+                    return "NotLoaded"
+                }
+            } else {
+                ++count
+            }
+        }
+
+        // Return No photos if the count is zero
+        if count == 0 {
+            return "NoPhotos"
+        }
+
+        // All the photos have been loaded
+        return "AllLoaded"
+    }
+
+
+
 
     // ***** BUTTON MANAGEMENT  **** //
 
@@ -110,7 +143,7 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     // Back button selected, dismiss view controller
     @IBAction func backToMapSelected(sender: AnyObject) {
 
-        self.dismissViewControllerAnimated(true, completion: nil)
+        dismissViewControllerAnimated(true, completion: nil)
     }
 
 
@@ -121,31 +154,22 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
         // Disable the button so the user cannot keep selecting it
         // Will be enabled when the pin is updated
         newCollectionButton.enabled = false
-   
-        dispatch_async(dispatch_get_main_queue(), {
+
+        // stop collection from being touched while load is going on
+        photoCollectionView.allowsSelection = false
+        photoCollectionView.scrollEnabled = false
 
 
-            // Update the pin to indicate the load is started, this disables the New Collection button
+        // Remove the documents from the collection. They will be replaced with activity indicators
+        for indexNumber in 0...Constants.photosToDisplayOffsetZero {
 
-            self.selectedPin!.photosLoadedIndicator = false
-            CoreDataStackManager.sharedInstance().saveContext()
+           let photo = fetchedResultsController.fetchedObjects![indexNumber] as! Photos
 
+            photo.documentsThumbnailFileName = nil
 
-            // stop collection from being touched while load is going on
-            self.photoCollectionView.allowsSelection = false
-            self.photoCollectionView.scrollEnabled = false
-
- /****           // Remove the documents -- tried this but it is the same issue
-            for photo in self.fetchedResultsController.fetchedObjects as! [Photos] {
-                    photo.documentsThumbnailFileName = nil
-            }
-
-            // Save the changes
-            //      CoreDataStackManager.sharedInstance().saveContext()   ***/
-
-            print("should be reloading here-- Need to replace with activity indicators")
-            self.photoCollectionView.reloadData()
-        })
+            let indexPath = NSIndexPath(forRow: indexNumber, inSection: 0)
+            photoCollectionView.reloadItemsAtIndexPaths([indexPath])
+        }
 
         // Load new photos for the pin
         loadPinPhotos()
@@ -156,8 +180,6 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     // Get the Photos from Flickr, save in documents and update the photos
     func loadPinPhotos() {
 
-        print("loadPinPhotosBeing")
-
         let pinTotalPhotos = selectedPin!.totalPhotos as? Int 
         let latitude = selectedPin!.latitude.stringValue
         let longitude = selectedPin!.longitude.stringValue
@@ -165,47 +187,42 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
         // Call Flickr to get the photos
         FlickrClient.sharedInstance().requestFlickrPhotos( latitude, longitude: longitude, newPin: false, pinNumberOfPhotos: pinTotalPhotos, pinID: selectedPin!.id!, pin: selectedPin!, completionHandler: {documentsArray, success, errorString in
-            print("GotHereentering: \(success)")
-            // Check if we were able to get photos. If not, remove pin and present alert
+
+            // Photos were found
             if success == true  {
 
-                dispatch_async(dispatch_get_main_queue(), {
-                    self.selectedPin!.photosLoadedIndicator = true
-                    CoreDataStackManager.sharedInstance().saveContext()
-                })
-
-                //print("DocumentsArray in Detail: \(documentsArray)")
-                print("Document array count: \(documentsArray.count)")
-
+                // Loop throught the array to get the flickr URL, then download the photo, save 
+                // in documents folder, and update photo which will refresh the collection cell
                 var documentArrayIndex = 0
                 for photo in self.fetchedResultsController.fetchedObjects as! [Photos] {
 
                     // Load up the photo name and then save 
-                    let documentDictionary = documentsArray[documentArrayIndex]
-                    let filename = documentDictionary["documentFilename"] as? String
-                    let flickrThumbnailPath = documentDictionary["flickrURL"] as? String
+                    let flickrThumbnailPath = documentsArray[documentArrayIndex]
 
-                    print("filename \(documentArrayIndex): \(filename)")
+                    if flickrThumbnailPath > " "  {
 
-                    dispatch_async(dispatch_get_main_queue(), {
-                        photo.documentsThumbnailFileName = filename
-                        photo.flickrThumbnailPath = flickrThumbnailPath
+                        // Get flickr photo and save in documents
+                        let filename = FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath)
 
-                    })
+                        // The photo was successfully downloaded
+                        if filename > " " {
+                            dispatch_async(dispatch_get_main_queue(), {
+                                photo.documentsThumbnailFileName = filename
+                                photo.flickrThumbnailPath = flickrThumbnailPath
+                                CoreDataStackManager.sharedInstance().saveContext()
+                            })
 
+                        } else {
+
+                            // Photo was not downloaded, set the photo to not have a document to display
+                            dispatch_async(dispatch_get_main_queue(), {
+                                photo.resetPhotoDocument()
+                                CoreDataStackManager.sharedInstance().saveContext()
+                            })
+                        }
+                    }
                     ++documentArrayIndex
                 }
-                dispatch_async(dispatch_get_main_queue(), {
-                    CoreDataStackManager.sharedInstance().saveContext()
-                })
-
-
-                // Save the photos
-                print("GotHereleaving")
-                // Update the pin to indicate the load is done, this enables the New Collection button
-
-
-
             } else {
 
                 // Present an alert to let the user know we could not load photos
@@ -213,6 +230,7 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
             }
         })
     }
+
 
 
 
@@ -271,7 +289,7 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
         annotations.append(annotation)
 
         // When the array is complete, we add the annotations to the map
-        self.detailMapView.addAnnotations(annotations)
+        detailMapView.addAnnotations(annotations)
     }
 
 
@@ -282,9 +300,8 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     // Number of Items set to the number of fetched results
     func collectionView(collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
 
-        let sectionInfo = self.fetchedResultsController.sections![section]
+        let sectionInfo = fetchedResultsController.sections![section]
         return sectionInfo.numberOfObjects
-
     }
 
 
@@ -298,20 +315,22 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
         cell.activityIndicator.stopAnimating()
 
         // Get the photo that is being formatted
-        let photo = self.fetchedResultsController.objectAtIndexPath(indexPath) as? Photos
+        let photo = fetchedResultsController.objectAtIndexPath(indexPath) as? Photos
 
-        print("IndexPath: \(indexPath)")
 
-        if selectedPin!.photosLoadedIndicator == false {
-            print("False load indicator")
+        // If the photos are being downloaded, set the activity indicator
+        if selectedPin!.photosLoadedIndicator == false   {
+
+            cell.collectionCellImage.image = UIImage(named: "whiteBackground")
             cell.activityIndicator.startAnimating()
+
         } else {
             if let photoFound = photo {
 
                 // Check if Photo has been downloaded
                 if photoFound.flickrThumbnailPath == nil || photoFound.flickrThumbnailPath ==  " "   {
-                    print("FlickrTHumbnail= nil")
-                    // No photo was available, should not happen but if it does, put out a white background
+
+                    // No photo was available, put out a white background
                     cell.collectionCellImage.image = UIImage(named: "whiteBackground")
 
                 } else {
@@ -320,13 +339,12 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
                     // Photo has not been downloaded yet, show an activity indicator in the cell
                     if photoDocumentsFileName == nil || photoDocumentsFileName == " "  {
-                        print("photoDocumentsFileName= nil")
+                        cell.collectionCellImage.image = UIImage(named: "whiteBackground")
                         cell.activityIndicator.startAnimating()
 
                     } else {
-                        print("photoDocumentsFileName = \(photoDocumentsFileName!)")
                         // Photo is downloaded, put the image from the documents folder into the cell
-                        let photoDocumentsUrl = self.imageFileURL(photoDocumentsFileName!).path
+                        let photoDocumentsUrl = imageFileURL(photoDocumentsFileName!).path
                         let photoImage = UIImage(contentsOfFile: photoDocumentsUrl!)
 
                         cell.collectionCellImage.image = photoImage
@@ -334,15 +352,13 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
                 }
             } else {
 
-                print("No Photo Found")
                 // Photo in core data was not found. Should not happen but load a white background just in case
                 cell.collectionCellImage.image = UIImage(named: "whiteBackground")
             }
-
         }
-
         return cell
     }
+
 
 
     // Build the URL to retrieve the photo from the documents folder
@@ -358,7 +374,8 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
 
 
-    // When a photo is selected, it must be deleted
+    // When a photo is selected, it must be deleted, I move it to the end, reset the photo so it is deleted from documents
+    // The core data update routine will then blank out the photo 
     func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
 
         // stop other photos from being selected until delete is finished 
@@ -384,7 +401,10 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
 
 
+
+
     // ***** CORE DATA  MANAGEMENT - PHOTO  **** //
+
 
     // Shared Context Helper
     var sharedContext: NSManagedObjectContext {
@@ -410,7 +430,7 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
 
 
-    // Fetch all saved Pins
+    // Fetch the selected Pin
     lazy var fetchedResultsControllerPin: NSFetchedResultsController = {
 
         let fetchRequest = NSFetchRequest(entityName: "Pins")
@@ -424,9 +444,8 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
         let fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: self.sharedContext, sectionNameKeyPath: nil, cacheName: nil)
 
         return fetchedResultsController
-        
     }()
-    
+
 
 
     // Called when core data is modified
@@ -436,90 +455,74 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
             switch type {
 
-            //Insert new photo
+            // Insert not used, always a set number of photos
             case .Insert:
-
-                // Add to array, collection will be updated at the end of all the updates
-               // insertedIndexPaths.append(newIndexPath!)
-                self.photoCollectionView.insertItemsAtIndexPaths([newIndexPath!])
-
                 break
 
-            // Photo was deleted, delete photo from documents folder,
+            // Delete not used, used move instead
             case .Delete:
-
-                // Remove the annotation when the pin was deleted
-                if objectName == "Photos"  {
-
-                    // Add to array, collection will be updated at the end of all the updates
-                  //  deletedIndexPaths.append(indexPath!)
-                    self.photoCollectionView.deleteItemsAtIndexPaths([indexPath!])
-
-                    // allow other photos to be deleted now that delete is complete
-                    self.photoCollectionView.allowsSelection = true
-                    self.photoCollectionView.scrollEnabled = true
-
-                }
-                break
+                 break
 
             // Update:
             case .Update:
 
-                print(".update")
+                // Called when an object is updated, typically this is when the photo is finally downloaded.
+                if objectName == "Photos"  {
 
-                // Called when an object is updated, typically this is when the photo is finally downloaded. 
-                // All updates are held and run at the end
-                if objectName == "Photos" {
-                    print("photo.update.indexPath: \(indexPath)")
-                  //  updatedIndexPaths.append(indexPath!)
+                    // Reload the Cell
+                    photoCollectionView.reloadItemsAtIndexPaths([indexPath!])
 
-                    self.photoCollectionView.reloadItemsAtIndexPaths([indexPath!])
+                    // Check if the photos have all  been loaded
+                    let photosLoaded = checkIfAllPhotosLoaded()
 
-                    // stop others from being selected until delete is finished
-                    self.photoCollectionView.allowsSelection = true
-                    self.photoCollectionView.scrollEnabled = true
 
+                    if photosLoaded == "NotLoaded" {
+
+                        // All photos have not been downloaded
+                        // Disable the new collection button until all photos are loaded
+                        newCollectionButton.enabled = false
+
+                        // Disable the collection while the photos are loading
+                        photoCollectionView.allowsSelection = false
+                        photoCollectionView.scrollEnabled = false
+
+                    } else {
+
+                        // All photos have been downloaded
+                        // Enable the new collection button until all photos are loaded
+                        newCollectionButton.enabled = true
+
+                        // Enabe the collection
+                        photoCollectionView.allowsSelection = true
+                        photoCollectionView.scrollEnabled = true
+                    }
                 }
 
-                // Pin was updated, this means that all the photos are downloaded and the New Collection button can be enabled
+                // Pin was updated, this means the total pins and/or the load indicator that flickr was called has been 
+                // set.  Check for no photos again...
                 if objectName == "Pins" {
 
                     let pin = fetchedResultsControllerPin.objectAtIndexPath(indexPath!) as! Pins
 
-                    if pin.photosLoadedIndicator == true {
+                    // Refresh the pin information
+                    selectedPin = pin
 
-                        if selectedPin?.totalPhotos == 0 {
-                            // Show the view with message
-                            noPhotoView.hidden = false
+                    // If we got here, flickr returned no images after we presented the view controller. Must switch the view
+                    if pin.photosLoadedIndicator == true && pin.totalPhotos == 0 {
 
-                            // disable the New Collection Button
-                            newCollectionButton.hidden = true
+                        // Show the view with message
+                        noPhotoView.hidden = false
 
-                        } else  {
-                            // hide the view so the collection shows
-                            noPhotoView.hidden = true
-
-                            newCollectionButton.enabled = true
-                            // Free up the collection to be selected
-                            photoCollectionView.allowsSelection = true
-                            photoCollectionView.scrollEnabled = true
-                        }
-
-                    } else {
-
-                        // Disable the newCollection Button
-                        newCollectionButton.enabled = false
-                        // stop other photos from being selected until delete is finished
-                        photoCollectionView.allowsSelection = false
-                        photoCollectionView.scrollEnabled = false
+                        // disable the New Collection Button
+                        newCollectionButton.hidden = true
                     }
                 }
                 break
 
-            // Move: Used when deleting a photo, first it is moved ot end and the blanked out
+
+            // Move: Used when deleting a photo, first the photo is moved to end and then blanked out
             case .Move:
 
-                // Move the photo immediately
                 if objectName == "Photos" {
                     photoCollectionView.moveItemAtIndexPath(indexPath!, toIndexPath: newIndexPath!)
                 }
@@ -527,51 +530,7 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
             }
         }
 
-/****  Removed batching trying to see if that would fix collection issue
-    // Updates to the photos in core data are starting, start with fresh arrays.
-    func controllerWillChangeContent(controller: NSFetchedResultsController) {
 
-        insertedIndexPaths = [NSIndexPath]()
-        deletedIndexPaths = [NSIndexPath]()
-        updatedIndexPaths = [NSIndexPath]()
-    }
-
-
-    // Performing collection updates in batch move
-    func controllerDidChangeContent(controller: NSFetchedResultsController) {
-
-        photoCollectionView.performBatchUpdates({() -> Void in
-
-            // Photo inserted cells to replace those being deleted
-            for indexPath in self.insertedIndexPaths {
-                self.photoCollectionView.insertItemsAtIndexPaths([indexPath])
-            }
-
-
-            // Photo deleted cells need to be deleted
-            for indexPath in self.deletedIndexPaths {
-
-                self.photoCollectionView.deleteItemsAtIndexPaths([indexPath])
-
-                // allow other photos to be deleted now that delete is complete
-                self.photoCollectionView.allowsSelection = true
-                self.photoCollectionView.scrollEnabled = true
-            }
-
-            // Photos updated (image downloaded), reload and present the image
-            for indexPath in self.updatedIndexPaths {
-
-                self.photoCollectionView.reloadItemsAtIndexPaths([indexPath])
-
-                // stop others from being selected until delete is finished
-                self.photoCollectionView.allowsSelection = true
-                self.photoCollectionView.scrollEnabled = true
-            }
-
-            }, completion: nil)
-    }
-
-***/
 
 
     // ***** ALERT MANAGEMENT  **** //

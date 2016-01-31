@@ -15,7 +15,7 @@ class FlickrClient: NSObject, NSFetchedResultsControllerDelegate   {
     // Array of document names, used to load photos into Core Data
     var photoDocumentNamesArray: [String?] = []
 
-    var photoDocumentNamesDictionary: [NSDictionary] = []
+    var photoDocumentNamesDictionary: [String] = []
 
 
     var session: NSURLSession

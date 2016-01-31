@@ -36,7 +36,9 @@ class Photos : NSManagedObject {
 
         // Initialize the data elements for the Photo, using Date for sort for Photo
         pinsID = dictionary[Keys.pinsID] as! String?
+
         photoID = NSDate()
+
         flickrThumbnailPath = dictionary[Keys.flickrThumbnailPath] as? String
         documentsThumbnailFileName = dictionary[Keys.documentsThumbnailFileName] as? String
      }
@@ -44,7 +46,7 @@ class Photos : NSManagedObject {
     // Function to set the photo to deleted status and to remove from documents directory
     func resetPhotoDocument() {
 
-        if documentsThumbnailFileName != nil {
+        if documentsThumbnailFileName != nil && documentsThumbnailFileName != " " {
 
             let fileURL = self.imageFileURL(documentsThumbnailFileName!).path!
 
@@ -53,8 +55,8 @@ class Photos : NSManagedObject {
             }
             catch {}
 
-            flickrThumbnailPath = nil
-            documentsThumbnailFileName = nil
+            flickrThumbnailPath = " "
+            documentsThumbnailFileName = " "
         }
     }
 
@@ -69,5 +71,6 @@ class Photos : NSManagedObject {
 
         return fileURL
     }
+
 
 }

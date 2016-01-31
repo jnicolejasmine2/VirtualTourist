@@ -27,8 +27,13 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
     // Current Annotation selected
     var currentAnnotation: MKPointAnnotation? = nil
 
+
     // Indicator if we are in edit mode
     var currentEditMode: Bool = false
+
+
+    // Fetched Photos
+    var fetchedPhotos:[Photos] = []
 
 
 
@@ -175,14 +180,11 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
 
         // Update the pin to indicate the load is started, this disables the New Collection button
         dispatch_async(dispatch_get_main_queue(), {
-
             self.currentPin!.photosLoadedIndicator = false
             CoreDataStackManager.sharedInstance().saveContext()
         })
 
         // Build the initial photos for the pin
-        dispatch_async(dispatch_get_main_queue(), {
-
             for _ in 0...Constants.photosToDisplayOffsetZero {
                 let PhotoInsertDictionary: [String : AnyObject] = [
                     Photos.Keys.pinsID : self.currentPin!.id!
@@ -190,84 +192,89 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
 
                 let _ = Photos(dictionary: PhotoInsertDictionary, context: self.sharedContext)
             }
-        })
+
         CoreDataStackManager.sharedInstance().saveContext()
+
+
+        // Fetch the photos so we can update them with the document ID
+        let fetchRequest = NSFetchRequest(entityName: "Photos")
+        fetchRequest.predicate = NSPredicate(format: "pinsID == %@", self.currentPin!.id!)
+
+        // Sort by photoID which is an ascending date
+        fetchRequest.sortDescriptors = [NSSortDescriptor(key: "photoID", ascending: true)]
+
+        do {
+            // Fetch the photos
+            fetchedPhotos = try self.sharedContext.executeFetchRequest(fetchRequest) as! [Photos]
+        } catch {
+            // Present an alert to let the user know we could not load photos
+            self.presentAlert("Unable to Load Photos from Flickr!", includeOK: true )
+        }
 
         let pinTotalPhotos = currentPin!.totalPhotos as? Int
 
         // Call Flickr to get the photos
         FlickrClient.sharedInstance().requestFlickrPhotos( latitude, longitude: longitude, newPin: true, pinNumberOfPhotos: pinTotalPhotos, pinID: currentPin!.id!, pin: currentPin!, completionHandler: {documentsArray, success, errorString in
 
-           print("map documentsArray: \(documentsArray)")
+            // Loop through the photos, download the photo and set the flickr URL and document filename for each photo
+            for photoIndex in 0...Constants.photosToDisplayOffsetZero {
 
-            dispatch_async(dispatch_get_main_queue(), {
-            // Set up fetch of all photos for the Pin we are working on
+                let photo = self.fetchedPhotos[photoIndex]
 
-            print("turned it to true")
-            self.currentPin!.photosLoadedIndicator = true
-                CoreDataStackManager.sharedInstance().saveContext()
-                
-            let fetchRequest = NSFetchRequest(entityName: "Photos")
-                fetchRequest.predicate = NSPredicate(format: "pinsID == %@", self.currentPin!.id!)
+                let flickrThumbnailPath = documentsArray[photoIndex]
 
-                // Sort by photoID which is an ascending date
-                fetchRequest.sortDescriptors = [NSSortDescriptor(key: "photoID", ascending: true)]
+                if flickrThumbnailPath > " " {
 
-            do {
-                // Fetch the photos
-                let fetchedPhotos = try self.sharedContext.executeFetchRequest(fetchRequest) as! [Photos]
+                    // Get flickr photo and save in documents
+                    let filename = FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath)
 
-                // Loop through the photos and set the filename from the array
-                for photoIndex in 0...Constants.photosToDisplayOffsetZero {
-
-                    let photo = fetchedPhotos[photoIndex]
-
-                    // Load up the photo name and then save
-                    let documentDictionary = documentsArray[photoIndex]
-                    let filename = documentDictionary["documentFilename"] as? String
-                    let flickrThumbnailPath = documentDictionary["flickrURL"] as? String
-
-                    print("filename:\(photoIndex): \(filename)")
-
+                    // Photo downloaded, update the photo record
                     if filename > " " {
 
+                         dispatch_async(dispatch_get_main_queue(), {
+
+                            // Set the document and URL names so that the collection can be updated
                             photo.documentsThumbnailFileName = filename
                             photo.flickrThumbnailPath = flickrThumbnailPath
 
+                            // Save the data
+                            CoreDataStackManager.sharedInstance().saveContext()
+                        })
+
                     } else {
-                        photo.resetPhotoDocument()
+
+                        // Photo ws not downloaded, set the photo to indicate no photo
+                        dispatch_async(dispatch_get_main_queue(), {
+
+                            // Had to first put a non-blank/non-nil value so the collection core
+                            // date .update would be triggered to turn off the activity indicator
+                            photo.documentsThumbnailFileName = "X"
+
+                            // set URL and file name to blanks
+                            photo.resetPhotoDocument()
+
+                            // Save the data
+                            CoreDataStackManager.sharedInstance().saveContext()
+                        })
                     }
+                } else {
+                    dispatch_async(dispatch_get_main_queue(), {
+
+                        // Had to first put a non-blank/non-nil value so the collection core
+                        // date .update would be triggered to turn off the activity indicator
+                        photo.documentsThumbnailFileName = "X"
+
+                        // set URL and file name to blanks
+                        photo.resetPhotoDocument()
+
+                         // Save the data
+                        CoreDataStackManager.sharedInstance().saveContext()
+                    })
                 }
-
-
-
-                CoreDataStackManager.sharedInstance().saveContext()
-
-
-            } catch {
-                // Present an alert to let the user know we could not load photos
-                self.presentAlert("Unable to Load Photos from Flickr!", includeOK: true )
             }
-
- })
-     /****       // Check if we were able to get photos. If not, remove pin and present alert
-            if success == false   {
-
-                // Delete the pin so there are no orphaned pins without photos
-                dispatch_async(dispatch_get_main_queue(), {
-
-                    let pinManagedObject = self.fetchedResultsController.fetchedObjects![currentIndex] as! Pins
-                    self.sharedContext.deleteObject(pinManagedObject)
-
-                    // Save the data
-                    CoreDataStackManager.sharedInstance().saveContext()
-                })
-
-                // Present an alert to let the user know we could not load photos
-                self.presentAlert("Unable to Load Photos from Flickr!", includeOK: true )
-            }  ***/
         })
     }
+
 
 
 
@@ -277,7 +284,7 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
     // Edit and Done button, move up/down the map and edit message
     @IBAction func editPinAction(sender: AnyObject) {
 
-        // NON-EDIT MODE
+        // TURN EDIT MODE ON
         if currentEditMode == false {
 
             // Move the message view and map up
@@ -295,9 +302,16 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
             // Switch button to done
             editDoneButton.title = "Done"
 
+            // Do not allow new pins to be dropped while in Edit mode
+            if let recognizers = mapView.gestureRecognizers {
+                for recognizer in recognizers  {
+                    mapView.removeGestureRecognizer(recognizer )
+                }
+            }
+
         } else {
 
-            // EDIT MODE
+            // TURN EDIT MODE OFF
 
             // Move the message view and map back down
             for _ in 1...44 {
@@ -315,7 +329,14 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
             // Switch button to Edit
             editDoneButton.title = "Edit"
 
-        }
+
+            // Not edit mode, allow pins to drop
+            // let mapLPGR = UILongPressGestureRecognizer(target: self, action: "action:")
+
+            let mapLPGR = UILongPressGestureRecognizer(target: self, action: "action:")
+            mapLPGR.minimumPressDuration = 1.0
+            mapView.addGestureRecognizer(mapLPGR)
+            }
     }
 
 
@@ -372,12 +393,12 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
                     detailController.selectedPin = pinManagedObject
 
                     // Deselect the pin so that when returning can reselect it
-                    self.mapView.deselectAnnotation(view.annotation!, animated: true)
+                    mapView.deselectAnnotation(view.annotation!, animated: true)
 
                     // Present the view controller
-                    self.presentViewController(detailController, animated: true, completion: nil)
-                    break
+                    presentViewController(detailController, animated: true, completion: nil)
 
+                    break
                 }
                 indexNumber += 1
             }
@@ -393,7 +414,7 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
                     FlickrClient.sharedInstance().deletePhotosForAPin(foundPin.id, completionHandler: { success, errorString in
 
                         if success == true {
-                            
+
                             // Delete the pin
                             let pinManagedObject = self.fetchedResultsController.fetchedObjects![indexNumber] as! Pins
                             self.sharedContext.deleteObject(pinManagedObject)
@@ -408,6 +429,7 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
             }
         }
     }
+
 
 
     // When the map view is changed, save off the region information to be used when app is reopened
@@ -440,7 +462,7 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
         }
 
         // When the array is complete, add the annotations to the map
-        self.mapView.addAnnotations(annotations)
+        mapView.addAnnotations(annotations)
     }
 
 
@@ -504,7 +526,6 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
                     mapView.addAnnotation(annotation)
                 }
                 break
-
 
             // Delete: deletes the annotation from the map when pin is deleted
             case .Delete:

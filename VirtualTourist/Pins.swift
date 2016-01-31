@@ -18,14 +18,12 @@ class Pins : NSManagedObject {
         static let photosLoadedIndicator = "photosLoadedIndicator"
     }
 
-
     @NSManaged var id: String?
     @NSManaged var latitude: NSNumber!
     @NSManaged var longitude: NSNumber!
     @NSManaged var totalPhotos: NSNumber?
     @NSManaged var album: [Photos]
     @NSManaged var photosLoadedIndicator: Bool
-
 
 
     override init(entity: NSEntityDescription, insertIntoManagedObjectContext context: NSManagedObjectContext?) {

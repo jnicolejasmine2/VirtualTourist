@@ -13,7 +13,7 @@ import CoreData
 extension FlickrClient {
 
 
-    func requestFlickrPhotos( latitude: String, longitude: String, newPin: Bool,  pinNumberOfPhotos: Int?, pinID: String, pin: Pins, completionHandler: (documentsArray: [NSDictionary], success: Bool, errorString: String? ) -> Void) {
+    func requestFlickrPhotos( latitude: String, longitude: String, newPin: Bool,  pinNumberOfPhotos: Int?, pinID: String, pin: Pins, completionHandler: (documentsArray: [String], success: Bool, errorString: String? ) -> Void) {
 
         // Left in and stored in case the Flickr page issue is resolved
         let flickrKeyValuePairsBbox = [
@@ -53,32 +53,8 @@ extension FlickrClient {
                     totalPhotos = (totalPhototsTemp as NSString).integerValue
                 }
 
-                if totalPhotos >  0  {
 
-                    // Commit the Pin to indicate the photos are being loaded, this turns off the New collection button in the detail view
-                    dispatch_async(dispatch_get_main_queue(), {
-                        pin.totalPhotos = totalPhotos
-                        pin.photosLoadedIndicator = false
-
-                        // Save the photos
-                        CoreDataStackManager.sharedInstance().saveContext()
-                    })
-
-                    self.buildPhotoURLDocumentNameArray (photoArray, completionHandler: { documentsArray, success, errorString in
-                        print("got here after doing the build array: \(success)" )
-                        if success == false {
-
-                            // Return success, indicating the photos could not be saved
-                            completionHandler(documentsArray: [], success: false,  errorString: errorString)
-
-                        } else {
-
-                            //Return documents to they can be loaded into Photos
-                            completionHandler(documentsArray: documentsArray, success: true,  errorString: errorString)
-                        }
-                    })
-                 }
-                // Commit the Pin to indicate the the load is complete, no photos were found
+                // Commit the Pin to indicate the photos are being loaded, this turns off the New collection button in the detail view
                 dispatch_async(dispatch_get_main_queue(), {
                     pin.totalPhotos = totalPhotos
                     pin.photosLoadedIndicator = true
@@ -87,45 +63,89 @@ extension FlickrClient {
                     CoreDataStackManager.sharedInstance().saveContext()
                 })
 
+
+                // Photos were found, need to get the URL's and load array so the documents can be downloaded
+                if totalPhotos >  0  {
+
+                    self.buildPhotoURLDocumentNameArray (photoArray, completionHandler: { documentsArray, success, errorString in
+
+                        if success == false {
+
+                            // Return empty array
+                            completionHandler(documentsArray: [], success: false,  errorString: errorString)
+
+                        } else {
+
+                            //Return URL list
+                            completionHandler(documentsArray: documentsArray, success: true,  errorString: errorString)
+                        }
+                    })
+                 }
             }
         }
     }
 
 
 
+    // Builds an array of URLS's to be loaded back in the calling view controller.
+    func buildPhotoURLDocumentNameArray (photoArray:[[String: AnyObject]], completionHandler: (documentsArray: [String], success: Bool, errorString: String?) -> Void) {
+
+        // initialize the photos array to nill so it is fresh for the new photos
+        photoDocumentNamesDictionary = []
+
+        let photoCount = photoArray.count
+
+        var photoIndexStart = 0
+        var photoIndexEnd = Constants.photosToDisplayOffsetZero
 
 
-    // Get access to the documents folder and add the photo file name
-    func imageFileURL(fileName: String) ->  NSURL {
-
-        let dirPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)[0]
-
-        let pathArray = [dirPath, fileName]
-        let fileURL =  NSURL.fileURLWithPathComponents(pathArray)!
-        return fileURL
-    }
-
-
-
-    // Download the photo and add to Documents folder
-    func addPhotoToDocuments (imageUrlString: String) -> String {
-
-        let imageURL = NSURL(string: imageUrlString)
-        var filename: String?
-        if let imageData = NSData(contentsOfURL: imageURL!) {
-
-            // Using unique ID for the document name
-            let uniqueID = NSUUID()
-            filename = uniqueID.UUIDString
-
-            // Save image in documents folder
-            if let fileURL = imageFileURL(filename!).path {
-                NSFileManager.defaultManager().createFileAtPath(fileURL, contents: imageData,   attributes:nil)
-            }
+        // The defaults are used when there are less than a full album of photos.
+        // Otherwise, we look for a random place to start selecting photos
+        if photoCount > Constants.photosToDisplay {
+            let numberOfAvailableStartingPhotos = UInt32(photoCount - Constants.photosToDisplayOffsetZero)
+            photoIndexStart = Int(arc4random_uniform(numberOfAvailableStartingPhotos))
+            photoIndexEnd = photoIndexStart + Constants.photosToDisplayOffsetZero
         }
-        return filename!
+
+
+        var trackingNumberOfPhotos = 0
+
+        // Loop through up to the max downloaded photos
+        for photoIndex in photoIndexStart...photoIndexEnd {
+
+            // If there are no actual photos, just add an entry in the array without a flickr thumbnail value
+            if trackingNumberOfPhotos >= photoCount {
+
+                photoDocumentNamesDictionary.append(" ")
+
+            } else {
+
+                // Add the Flickr URL to the array
+                let photoDictionary = photoArray[photoIndex] as [String: AnyObject]
+
+                if let imageUrlString = photoDictionary["url_m"] as? String {
+                    photoDocumentNamesDictionary.append(imageUrlString)
+                }
+            }
+            ++trackingNumberOfPhotos
+        }
+
+        // All done loading the array, send back to calling view controller to download images
+        completionHandler(documentsArray: photoDocumentNamesDictionary, success: true,  errorString: nil)
     }
 
+
+    
+    // Shared Context Helper
+    var sharedContext: NSManagedObjectContext {
+        return CoreDataStackManager.sharedInstance().managedObjectContext
+    }
+
+
+
+
+    // ***** DELETE ALL PHOTOS FOR A PIN  **** //
+    // Individual delete of photos is managed in the Photo Class
 
     // Delete photos for the pin when the pin is deleted
     func deletePhotosForAPin(pinID: String!, completionHandler: (success: Bool, errorString: String?) -> Void) {
@@ -142,8 +162,6 @@ extension FlickrClient {
 
                 // Loop through the photos deleting the photo from the documents folder
                 let photoCount = fetchedPhotos.count
-
-                print("delete photo count:\(photoCount)")
 
                 for photoIndex in 0...(photoCount - 1) {
 
@@ -172,70 +190,40 @@ extension FlickrClient {
 
 
 
-    // Shared Context Helper
-    var sharedContext: NSManagedObjectContext {
-        return CoreDataStackManager.sharedInstance().managedObjectContext
-    }
 
+    // ***** MANAGE SAVING TO DOCUMENTS FOLDER  **** //
 
+    // Download the photo and add to Documents folder
+    func addPhotoToDocuments (imageUrlString: String) -> String {
 
+        let imageURL = NSURL(string: imageUrlString)
+        var filename: String?
+        if let imageData = NSData(contentsOfURL: imageURL!) {
 
+            // Using unique ID for the document name
+            let uniqueID = NSUUID()
+            filename = uniqueID.UUIDString
 
-    // There are two steps here, one to add the photos to the documents folder. Two, update the photo record
-    // in core data.
-    func buildPhotoURLDocumentNameArray (photoArray:[[String: AnyObject]], completionHandler: (documentsArray: [NSDictionary], success: Bool, errorString: String?) -> Void) {
-
-        // initialize the photos array to nill so it is fresh for the new photos
-        photoDocumentNamesDictionary = []
-
-        let photoCount = photoArray.count
-        var photoIndexStart = 0
-        var photoIndexEnd = Constants.photosToDisplayOffsetZero
-
-
-        // The defaults are used when there are less than a full album of photos.
-        // Otherwise, we look for a random place to start selecting photos
-        if photoCount > Constants.photosToDisplay {
-            let numberOfAvailableStartingPhotos = UInt32(photoCount - Constants.photosToDisplayOffsetZero)
-            photoIndexStart = Int(arc4random_uniform(numberOfAvailableStartingPhotos))
-            photoIndexEnd = photoIndexStart + Constants.photosToDisplayOffsetZero
-        }
-
-        print("photoIndexStart: \(photoIndexStart) ")
-        print("photoIndexEnd: \(photoIndexEnd) ")
-
-        var trackingNumberOfPhotos = 0
-
-        // Loop through up to the max downloaded photos
-        for photoIndex in photoIndexStart...photoIndexEnd {
-
-            // If there are no actual photos, just add without a flickr thumbnail value
-            if trackingNumberOfPhotos >= photoCount {
-                let dictionary = ["flickrURL": " ", "documentFilename": " "]
-                photoDocumentNamesDictionary.append(dictionary)
-
-            } else {
-
-                let photoDictionary = photoArray[photoIndex] as [String: AnyObject]
-                if let imageUrlString = photoDictionary["url_m"] as? String {
-
-                    // Get the document and store in documents folder
-                    let filename = addPhotoToDocuments(imageUrlString)
-
-                    let dictionary: NSDictionary = ["flickrURL": imageUrlString,
-                        "documentFilename": filename
-                    ]
-
-                    photoDocumentNamesDictionary.append(dictionary)
-                }
+            // Save image in documents folder
+            if let fileURL = imageFileURL(filename!).path {
+                NSFileManager.defaultManager().createFileAtPath(fileURL, contents: imageData,   attributes:nil)
             }
-            ++trackingNumberOfPhotos 
         }
-        print("photoDocumentNamesDictionary: \(photoDocumentNamesDictionary)")
-        completionHandler(documentsArray: photoDocumentNamesDictionary, success: true,  errorString: nil)
+
+        return filename!
     }
 
 
+
+    // Get access to the documents folder and add the photo file name
+    func imageFileURL(fileName: String) ->  NSURL {
+
+        let dirPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)[0]
+
+        let pathArray = [dirPath, fileName]
+        let fileURL =  NSURL.fileURLWithPathComponents(pathArray)!
+        return fileURL
+    }
 
 
 }
