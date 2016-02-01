@@ -1,5 +1,5 @@
 //
-//  DetailViewController.swift
+//  CollectionViewController..swift
 //  VirtualTourist
 //
 //  Created by Jeanne Nicole Byers on 1/1/16.
@@ -12,7 +12,7 @@ import MapKit
 import CoreData
 
 
-class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResultsControllerDelegate, UICollectionViewDelegate {
+class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedResultsControllerDelegate, UICollectionViewDelegate {
 
     // Outlets
     @IBOutlet weak var detailMapView: MKMapView!
@@ -82,18 +82,10 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
                 // Disable the new collection button until all photos are loaded
                 newCollectionButton.enabled = false
 
-                // Disable the collection while the photos are loading
-                photoCollectionView.allowsSelection = false
-                photoCollectionView.scrollEnabled = false
-
             } else {
                 // Disable the new collection button until all photos are loaded
                 newCollectionButton.enabled = true
-
-                // Disable the collection while the photos are loading
-                photoCollectionView.allowsSelection = true
-                photoCollectionView.scrollEnabled = true
-            }
+             }
 
             // Load the collection
             photoCollectionView.reloadData()
@@ -151,22 +143,14 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     // New Collection button was touched, load new pins
     @IBAction func newCollectionAction(sender: AnyObject) {
 
-        // Disable the button so the user cannot keep selecting it
-        // Will be enabled when the pin is updated
-        newCollectionButton.enabled = false
-
-        // stop collection from being touched while load is going on
-        photoCollectionView.allowsSelection = false
-        photoCollectionView.scrollEnabled = false
-
-
         // Remove the documents from the collection. They will be replaced with activity indicators
         for indexNumber in 0...Constants.photosToDisplayOffsetZero {
 
-           let photo = fetchedResultsController.fetchedObjects![indexNumber] as! Photos
-
+            // nil out the thumbnail so it will be refreshed
+            let photo = fetchedResultsController.fetchedObjects![indexNumber] as! Photos
             photo.documentsThumbnailFileName = nil
 
+            // Reload the collection, presenting a activity indicator
             let indexPath = NSIndexPath(forRow: indexNumber, inSection: 0)
             photoCollectionView.reloadItemsAtIndexPaths([indexPath])
         }
@@ -202,24 +186,38 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
                     if flickrThumbnailPath > " "  {
 
                         // Get flickr photo and save in documents
-                        let filename = FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath)
+                        FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath, photo: photo, completionHandler: {filename in
 
-                        // The photo was successfully downloaded
-                        if filename > " " {
-                            dispatch_async(dispatch_get_main_queue(), {
-                                photo.documentsThumbnailFileName = filename
-                                photo.flickrThumbnailPath = flickrThumbnailPath
-                                CoreDataStackManager.sharedInstance().saveContext()
-                            })
+                            // Photo downloaded, update the photo record
+                            if filename > " " {
 
-                        } else {
+                                dispatch_async(dispatch_get_main_queue(), {
 
-                            // Photo was not downloaded, set the photo to not have a document to display
-                            dispatch_async(dispatch_get_main_queue(), {
-                                photo.resetPhotoDocument()
-                                CoreDataStackManager.sharedInstance().saveContext()
-                            })
-                        }
+                                    // Set the document and URL names so that the collection can be updated
+                                    photo.documentsThumbnailFileName = filename
+                                    photo.flickrThumbnailPath = flickrThumbnailPath
+
+                                    // Save the data
+                                    CoreDataStackManager.sharedInstance().saveContext()
+                                })
+
+                            } else {
+
+                                // Photo ws not downloaded, set the photo to indicate no photo
+                                dispatch_async(dispatch_get_main_queue(), {
+
+                                    // Had to first put a non-blank/non-nil value so the collection core
+                                    // date .update would be triggered to turn off the activity indicator
+                                    photo.documentsThumbnailFileName = "X"
+
+                                    // set URL and file name to blanks
+                                    photo.resetPhotoDocument()
+
+                                    // Save the data
+                                    CoreDataStackManager.sharedInstance().saveContext()
+                                })
+                            }
+                        })
                     }
                     ++documentArrayIndex
                 }
@@ -378,22 +376,16 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
     // The core data update routine will then blank out the photo 
     func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
 
-        // stop other photos from being selected until delete is finished 
-        photoCollectionView.allowsSelection = false
-        photoCollectionView.scrollEnabled = false
-
-        let photo = fetchedResultsController.objectAtIndexPath(indexPath) as! Photos
-
-
-        // Changing the key to a later date moves the picture to the end.  The next step blanks it out and "deletes" it
-        photo.photoID = NSDate()
-
+         // Delete the pin
+        let photoManagedObject = self.fetchedResultsController.fetchedObjects![indexPath.item] as! NSManagedObject
+        self.sharedContext.deleteObject(photoManagedObject)
         // Save the changes
         CoreDataStackManager.sharedInstance().saveContext()
 
-
-        // sets the photo to delete status, flickr thumbnail and file name nil as well as deletes from documents folder
-        photo.resetPhotoDocument()
+        let PhotoInsertDictionary: [String : AnyObject] = [
+            Photos.Keys.pinsID : selectedPin!.id!
+        ]
+        let _ = Photos(dictionary: PhotoInsertDictionary, context: self.sharedContext)
 
         // Save the changes
         CoreDataStackManager.sharedInstance().saveContext()
@@ -457,10 +449,12 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
 
             // Insert not used, always a set number of photos
             case .Insert:
+                photoCollectionView.insertItemsAtIndexPaths([newIndexPath!])
                 break
 
-            // Delete not used, used move instead
+            // Delete the cell
             case .Delete:
+                photoCollectionView.deleteItemsAtIndexPaths([indexPath!])
                  break
 
             // Update:
@@ -482,19 +476,11 @@ class DetailViewController: UIViewController, MKMapViewDelegate, NSFetchedResult
                         // Disable the new collection button until all photos are loaded
                         newCollectionButton.enabled = false
 
-                        // Disable the collection while the photos are loading
-                        photoCollectionView.allowsSelection = false
-                        photoCollectionView.scrollEnabled = false
-
                     } else {
 
                         // All photos have been downloaded
                         // Enable the new collection button until all photos are loaded
                         newCollectionButton.enabled = true
-
-                        // Enabe the collection
-                        photoCollectionView.allowsSelection = true
-                        photoCollectionView.scrollEnabled = true
                     }
                 }
 

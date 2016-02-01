@@ -46,8 +46,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDele
     // MARK: - Split view
 
     func splitViewController(splitViewController: UISplitViewController, collapseSecondaryViewController secondaryViewController:UIViewController, ontoPrimaryViewController primaryViewController:UIViewController) -> Bool {
-        guard let secondaryAsNavController = secondaryViewController as? UINavigationController else { return false }
-        guard let _ = secondaryAsNavController.topViewController as? DetailViewController else { return false }
+        guard let _ = secondaryViewController as? UINavigationController else { return false }
+
               return false
     }
     // MARK: - Core Data stack

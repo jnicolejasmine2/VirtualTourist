@@ -73,4 +73,18 @@ class Photos : NSManagedObject {
     }
 
 
+    // When a photo is deleted from core data delete the corresponding document
+    override func prepareForDeletion() {
+
+        if documentsThumbnailFileName != nil && documentsThumbnailFileName != " " {
+            let fileURL = self.imageFileURL(documentsThumbnailFileName!).path!
+
+            do {
+                try NSFileManager.defaultManager().removeItemAtPath(fileURL )
+            }
+            catch {}
+        }
+    }
+
+
 }

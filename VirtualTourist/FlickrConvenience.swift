@@ -13,25 +13,18 @@ import CoreData
 extension FlickrClient {
 
 
+
+    // Request Flickr Photos
     func requestFlickrPhotos( latitude: String, longitude: String, newPin: Bool,  pinNumberOfPhotos: Int?, pinID: String, pin: Pins, completionHandler: (documentsArray: [String], success: Bool, errorString: String? ) -> Void) {
 
-        // Left in and stored in case the Flickr page issue is resolved
-        let flickrKeyValuePairsBbox = [
-            "method": "flickr.photos.search",
-            "api_key": "29a2ceb613c91743df22f8ccb4be9f28",
-            "accuracy": "11",
-            "privacy_filter": "1",
-            "per_page": "300",
-            "page": "1",
-            "lat": latitude,
-            "lon": longitude,
-            "format": "json",
-            "nojsoncallback": "1",
-            "extras": "url_m"
-        ]
+
+        // Build the flickr key values to send to request the photos 
+        var flickrKeyValuePairs = Constants.flickrKeyValuePairsConstant
+        flickrKeyValuePairs["lat"] = latitude
+        flickrKeyValuePairs["lon"] = longitude
 
         // Call Flickr for the photo request
-        processFlickrRequest(flickrKeyValuePairsBbox) {parsedResult, error in
+        processFlickrRequest(flickrKeyValuePairs) {parsedResult, error in
 
             // Check for Errors
             if let error = error {
@@ -194,23 +187,34 @@ extension FlickrClient {
     // ***** MANAGE SAVING TO DOCUMENTS FOLDER  **** //
 
     // Download the photo and add to Documents folder
-    func addPhotoToDocuments (imageUrlString: String) -> String {
+    func addPhotoToDocuments (imageUrlString: String, photo: Photos!,completionHandler: (filename: String?) -> Void) -> NSURLSessionDataTask  {
+        // Initialize task for getting data
 
-        let imageURL = NSURL(string: imageUrlString)
-        var filename: String?
-        if let imageData = NSData(contentsOfURL: imageURL!) {
+        let url = NSURL(string: imageUrlString)!
+        let request = NSURLRequest(URL: url)
 
-            // Using unique ID for the document name
-            let uniqueID = NSUUID()
-            filename = uniqueID.UUIDString
+        // Download the document in a background task to free up resources
+        let task = session.dataTaskWithRequest(request) { (data, response, error) in
 
-            // Save image in documents folder
-            if let fileURL = imageFileURL(filename!).path {
-                NSFileManager.defaultManager().createFileAtPath(fileURL, contents: imageData,   attributes:nil)
+            var filename: String?
+            if let imageData = data {
+                // Using unique ID for the document name
+                let uniqueID = NSUUID()
+                filename = uniqueID.UUIDString
+
+                // Save image in documents folder
+                if let fileURL = self.imageFileURL(filename!).path {
+                    NSFileManager.defaultManager().createFileAtPath(fileURL, contents: imageData,   attributes:nil)
+
+                    // Return file name so the photo can be updated
+                    completionHandler(filename: filename)
+                }
             }
         }
+        // Resume (execute) the task
+        task.resume()
 
-        return filename!
+        return task
     }
 
 
