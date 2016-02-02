@@ -26,6 +26,7 @@ class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedRe
 
     // Variables
     var selectedPin: Pins?
+    var numberOfPhotosDeleted: Int = 0
 
 
 
@@ -144,16 +145,34 @@ class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedRe
     @IBAction func newCollectionAction(sender: AnyObject) {
 
         // Remove the documents from the collection. They will be replaced with activity indicators
-        for indexNumber in 0...Constants.photosToDisplayOffsetZero {
+        for indexNumber in 0...(Constants.photosToDisplayOffsetZero - numberOfPhotosDeleted) {
 
             // nil out the thumbnail so it will be refreshed
-            let photo = fetchedResultsController.fetchedObjects![indexNumber] as! Photos
-            photo.resetPhotoDocumentFilename()
+            let photo = fetchedResultsController.fetchedObjects![indexNumber] as? Photos
 
+            photo!.resetPhotoDocumentFilename()
             // Reload the collection, presenting a activity indicator
             let indexPath = NSIndexPath(forRow: indexNumber, inSection: 0)
             photoCollectionView.reloadItemsAtIndexPaths([indexPath])
+
         }
+
+        // Re-add anydeleted photos so the activity indicators can be presented.
+        if numberOfPhotosDeleted > 0 {
+            for _ in 0...(numberOfPhotosDeleted - 1) {
+
+                // Insert an entry to replace the one that was deleted
+                let PhotoInsertDictionary: [String : AnyObject] = [
+                    Photos.Keys.pinsID : selectedPin!.id! 
+                ]
+                let _ = Photos(dictionary: PhotoInsertDictionary, context: self.sharedContext)
+
+                CoreDataStackManager.sharedInstance().saveContext()
+            }
+        }
+
+        // Reset number of photos deleted
+        numberOfPhotosDeleted = 0
 
         // Load new photos for the pin
         loadPinPhotos()
@@ -375,19 +394,15 @@ class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedRe
     // The core data update routine will then blank out the photo 
     func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
 
+        // Add one to the number of deleted photos
+        ++numberOfPhotosDeleted
+
          // Delete the pin
         let photoManagedObject = self.fetchedResultsController.fetchedObjects![indexPath.item] as! NSManagedObject
         self.sharedContext.deleteObject(photoManagedObject)
         // Save the changes
         CoreDataStackManager.sharedInstance().saveContext()
 
-        let PhotoInsertDictionary: [String : AnyObject] = [
-            Photos.Keys.pinsID : selectedPin!.id!
-        ]
-        let _ = Photos(dictionary: PhotoInsertDictionary, context: self.sharedContext)
-
-        // Save the changes
-        CoreDataStackManager.sharedInstance().saveContext()
      }
 
 
