@@ -148,7 +148,7 @@ class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedRe
 
             // nil out the thumbnail so it will be refreshed
             let photo = fetchedResultsController.fetchedObjects![indexNumber] as! Photos
-            photo.documentsThumbnailFileName = nil
+            photo.resetPhotoDocumentFilename()
 
             // Reload the collection, presenting a activity indicator
             let indexPath = NSIndexPath(forRow: indexNumber, inSection: 0)
@@ -251,7 +251,6 @@ class CollectionViewController: UIViewController, MKMapViewDelegate, NSFetchedRe
         else {
             pinView!.annotation = annotation
         }
-
         return pinView
     }
 

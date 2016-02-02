@@ -27,13 +27,14 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
     // Current Annotation selected
     var currentAnnotation: MKPointAnnotation? = nil
 
-
     // Indicator if we are in edit mode
     var currentEditMode: Bool = false
 
-
     // Fetched Photos
     var fetchedPhotos:[Photos] = []
+
+    // Map Region 
+    var fetchedMapRegion: [MapRegion] = []
 
 
 
@@ -73,23 +74,34 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
     func setMapRegions() {
 
         var lastRegion = MKCoordinateRegion()
-        let defaults = NSUserDefaults.standardUserDefaults()
 
-        if let _ = defaults.objectForKey("regionCenterLatitude") {
-            lastRegion.center.latitude = defaults.doubleForKey("regionCenterLatitude")
-            lastRegion.center.longitude = defaults.doubleForKey("regionCenterLongitude")
-            lastRegion.span.latitudeDelta = defaults.doubleForKey("regionSpanLatitudeDelta")
-            lastRegion.span.longitudeDelta = defaults.doubleForKey("regionSpanLongitudeDelta")
-        } else {
-            // Default first time app is used to US view that was the default
-            lastRegion.center.latitude = 37.13284
-            lastRegion.center.longitude = -95.78558
-            lastRegion.span.latitudeDelta =  73.9839134276936
-            lastRegion.span.longitudeDelta = 61.2760164777852
-        }
+        let fetchRequest = NSFetchRequest(entityName: "MapRegion")
+        fetchRequest.predicate = NSPredicate(format: "id == %@", "SavedMapRegionInformation")
 
-        // Update the map view
-        mapView.setRegion(lastRegion, animated: true)
+        do {
+            // Fetch the photos
+            fetchedMapRegion = try sharedContext.executeFetchRequest(fetchRequest) as! [MapRegion]
+
+            if  fetchedMapRegion == []  {
+
+                // Default first time app is used to US view that was the default
+                lastRegion.center.latitude = 37.13284
+                lastRegion.center.longitude = -95.78558
+                lastRegion.span.latitudeDelta =  73.9839134276936
+                lastRegion.span.longitudeDelta = 61.2760164777852
+            }
+            else  {
+                // Reopening app, set the last map region
+                let currentRegionInfo: MapRegion = fetchedMapRegion [0]
+                lastRegion.center.latitude = Double(currentRegionInfo.regionCenterLatitude)
+                lastRegion.center.longitude = Double(currentRegionInfo.regionCenterLongitude)
+                lastRegion.span.latitudeDelta = Double(currentRegionInfo.regionSpanLatitudeDelta)
+                lastRegion.span.longitudeDelta = Double(currentRegionInfo.regionSpanLongitudeDelta)
+            }
+
+            // Update the map view
+            mapView.setRegion(lastRegion, animated: true)
+        } catch {}
     }
 
 
@@ -334,12 +346,42 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
     // When the map view is changed, save off the region information to be used when app is reopened
     func mapView(mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
 
-        let defaults = NSUserDefaults.standardUserDefaults()
-        defaults.setDouble(mapView.region.center.latitude, forKey: "regionCenterLatitude")
-        defaults.setDouble(mapView.region.center.longitude, forKey: "regionCenterLongitude")
-        defaults.setDouble(mapView.region.span.latitudeDelta, forKey: "regionSpanLatitudeDelta")
-        defaults.setDouble(mapView.region.span.longitudeDelta, forKey: "regionSpanLongitudeDelta")
+        // Check if have saved map region information. If not, build the record and read it to be used later
+        if fetchedMapRegion == []  {
+
+            let MapRegionInsertDictionary: [String : AnyObject] = [
+                MapRegion.Keys.regionCenterLatitude : mapView.region.center.latitude,
+                MapRegion.Keys.regionCenterLongitude : mapView.region.center.longitude,
+                MapRegion.Keys.regionSpanLatitudeDelta : mapView.region.span.latitudeDelta,
+                MapRegion.Keys.regionSpanLongitudeDelta : mapView.region.span.longitudeDelta
+            ]
+            let _ = MapRegion(dictionary: MapRegionInsertDictionary, context: self.sharedContext)
+            CoreDataStackManager.sharedInstance().saveContext()
+
+            // Fetch so any updates will find it
+            let fetchRequest = NSFetchRequest(entityName: "MapRegion")
+            fetchRequest.predicate = NSPredicate(format: "id == %@", "SavedMapRegionInformation")
+
+            do {
+                // Fetch the photos
+                fetchedMapRegion = try sharedContext.executeFetchRequest(fetchRequest) as! [MapRegion]
+            }
+            catch {}
+
+        } else {
+
+            // Update the core data
+            let currentRegionInfo: MapRegion = fetchedMapRegion [0]
+
+            currentRegionInfo.regionCenterLatitude = mapView.region.center.latitude
+            currentRegionInfo.regionCenterLongitude = mapView.region.center.longitude
+            currentRegionInfo.regionSpanLatitudeDelta = mapView.region.span.latitudeDelta
+            currentRegionInfo.regionSpanLongitudeDelta = mapView.region.span.longitudeDelta
+
+            CoreDataStackManager.sharedInstance().saveContext()
+        }
     }
+
 
 
     // First time in, build the map, set up all the annotations using Pin information in the fetched results into an annotation array

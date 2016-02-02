@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		82A587921C6061870031ABAC /* MapRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A587911C6061870031ABAC /* MapRegion.swift */; };
 		82B2BCA31C59FB50003DF587 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B2BCA21C59FB50003DF587 /* Constants.swift */; };
 		82DD79501C45D71E004412BE /* PhotoCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82DD794F1C45D71E004412BE /* PhotoCell.swift */; };
 		82DF020E1C3772C0001894CB /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82DF020D1C3772C0001894CB /* AppDelegate.swift */; };
@@ -44,6 +45,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		82A587911C6061870031ABAC /* MapRegion.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MapRegion.swift; sourceTree = "<group>"; };
 		82B2BCA21C59FB50003DF587 /* Constants.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		82DD794F1C45D71E004412BE /* PhotoCell.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PhotoCell.swift; sourceTree = "<group>"; };
 		82DF020A1C3772C0001894CB /* VirtualTourist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VirtualTourist.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -167,6 +169,7 @@
 				82DF02461C377453001894CB /* Photos.swift */,
 				82DF02511C3A3BE1001894CB /* FlickrClient.swift */,
 				82DF02531C3A3CA4001894CB /* FlickrConvenience.swift */,
+				82A587911C6061870031ABAC /* MapRegion.swift */,
 			);
 			name = Model;
 			sourceTree = "<group>";
@@ -302,6 +305,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				82A587921C6061870031ABAC /* MapRegion.swift in Sources */,
 				82DF02111C3772C0001894CB /* VirtualTourist.xcdatamodeld in Sources */,
 				82DF02521C3A3BE1001894CB /* FlickrClient.swift in Sources */,
 				82DF02471C377453001894CB /* Photos.swift in Sources */,

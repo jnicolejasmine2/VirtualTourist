@@ -61,6 +61,25 @@ class Photos : NSManagedObject {
     }
 
 
+    // Function to set the photo to deleted status and to remove from documents directory
+    // Used in New Collection leaves URL so that an activity indicator will be presented in 
+    // the collection
+    func resetPhotoDocumentFilename() {
+
+        if documentsThumbnailFileName != nil && documentsThumbnailFileName != " " {
+
+            let fileURL = self.imageFileURL(documentsThumbnailFileName!).path!
+
+            do {
+                try NSFileManager.defaultManager().removeItemAtPath(fileURL )
+            }
+            catch {}
+
+            documentsThumbnailFileName = " "
+        }
+    }
+
+
 
     // Build the URL to retrieve the photo from the documents folder
     func imageFileURL(fileName: String) ->  NSURL {
