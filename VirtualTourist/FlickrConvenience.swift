@@ -15,7 +15,7 @@ extension FlickrClient {
 
 
     // Request Flickr Photos
-    func requestFlickrPhotos( latitude: String, longitude: String, newPin: Bool,  pinNumberOfPhotos: Int?, pinID: String, pin: Pins, completionHandler: (documentsArray: [String], success: Bool, errorString: String? ) -> Void) {
+    func requestFlickrPhotos( latitude: String, longitude: String, newPin: Bool,  pinNumberOfPhotos: Int?, pinID: String, pin: Pins, completionHandler: (documentsArray: [String], arrayPinID: String, success: Bool, errorString: String? ) -> Void) {
 
 
         // Build the flickr key values to send to request the photos 
@@ -29,14 +29,14 @@ extension FlickrClient {
             // Check for Errors
             if let error = error {
                 let errorMessage =  error.domain
-                completionHandler(documentsArray: [], success: false,  errorString: errorMessage )
+                completionHandler(documentsArray: [], arrayPinID: pinID, success: false,  errorString: errorMessage )
             } else {
 
-                // No error but check for no photos
+                // No error, check for no photos
                 guard let photosDictionary = parsedResult["photos"] as? NSDictionary,
                     photoArray = photosDictionary["photo"] as? [[String: AnyObject]]
                     else {
-                        completionHandler(documentsArray: [], success: false,  errorString: "Cannot Find Keys or Photos" )
+                        completionHandler(documentsArray: [], arrayPinID: pinID, success: false,  errorString: "Cannot Find Keys or Photos" )
                         return
                 }
 
@@ -46,16 +46,17 @@ extension FlickrClient {
                     totalPhotos = (totalPhototsTemp as NSString).integerValue
                 }
 
+                // Adjust total photos, that way we will not load extra entries 
+                if totalPhotos > Constants.photosToDisplay {
+                    totalPhotos = Constants.photosToDisplay
+                }
 
-                // Commit the Pin to indicate the photos are being loaded, this turns off the New collection button in the detail view
+                // Commit the Pin to indicate that photos are found and being loaded
                 dispatch_async(dispatch_get_main_queue(), {
                     pin.totalPhotos = totalPhotos
                     pin.photosLoadedIndicator = true
-
-                    // Save the photos
                     CoreDataStackManager.sharedInstance().saveContext()
                 })
-
 
                 // Photos were found, need to get the URL's and load array so the documents can be downloaded
                 if totalPhotos >  0  {
@@ -65,15 +66,20 @@ extension FlickrClient {
                         if success == false {
 
                             // Return empty array
-                            completionHandler(documentsArray: [], success: false,  errorString: errorString)
+                            completionHandler(documentsArray: [],  arrayPinID: pinID, success: false,  errorString: errorString)
 
                         } else {
 
                             //Return URL list
-                            completionHandler(documentsArray: documentsArray, success: true,  errorString: errorString)
+                            completionHandler(documentsArray: documentsArray,  arrayPinID: pinID, success: true,  errorString: errorString)
                         }
                     })
-                 }
+                } else {
+
+                    // Return empty array if there are no photos for the location
+                    completionHandler(documentsArray: [],  arrayPinID: pinID, success: true,  errorString: nil)
+                }
+
             }
         }
     }
@@ -100,13 +106,14 @@ extension FlickrClient {
             photoIndexEnd = photoIndexStart + Constants.photosToDisplayOffsetZero
         }
 
-
         var trackingNumberOfPhotos = 0
 
         // Loop through up to the max downloaded photos
         for photoIndex in photoIndexStart...photoIndexEnd {
 
             // If there are no actual photos, just add an entry in the array without a flickr thumbnail value
+
+            // Change back to >= photoCount
             if trackingNumberOfPhotos >= photoCount {
 
                 photoDocumentNamesDictionary.append(" ")
@@ -122,6 +129,7 @@ extension FlickrClient {
             }
             ++trackingNumberOfPhotos
         }
+        
 
         // All done loading the array, send back to calling view controller to download images
         completionHandler(documentsArray: photoDocumentNamesDictionary, success: true,  errorString: nil)
@@ -156,15 +164,10 @@ extension FlickrClient {
                 // Loop through the photos deleting the photo from the documents folder
                 let photoCount = fetchedPhotos.count
 
-                for photoIndex in 0...(photoCount - 1) {
+                if photoCount > 0 {
+                    for photoIndex in 0...(photoCount - 1) {
 
-                    let photo = fetchedPhotos[photoIndex]
-
-                    // If there is a photo in the document, continue to delete it
-                    if photo.documentsThumbnailFileName != nil {
-
-                        // Delete from documents folder if there was a photo saved
-                        photo.resetPhotoDocument()
+                        let photo = fetchedPhotos[photoIndex]
 
                         // Delete the photo from core data
                         self.sharedContext.deleteObject(photo)
@@ -187,9 +190,9 @@ extension FlickrClient {
     // ***** MANAGE SAVING TO DOCUMENTS FOLDER  **** //
 
     // Download the photo and add to Documents folder
-    func addPhotoToDocuments (imageUrlString: String, photo: Photos!,completionHandler: (filename: String?) -> Void) -> NSURLSessionDataTask  {
-        // Initialize task for getting data
+    func addPhotoToDocuments (imageUrlString: String, photo: Photos!, completionHandler: (filename: String?) -> Void) -> NSURLSessionDataTask  {
 
+        // Initialize task for getting data
         let url = NSURL(string: imageUrlString)!
         let request = NSURLRequest(URL: url)
 

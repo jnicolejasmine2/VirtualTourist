@@ -180,6 +180,7 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
                     // Start the process to get the photos
                     loadPinPhotos(latitude, longitude: longitude, currentIndex:indexNumber)
                     break
+
                 }
                 indexNumber += 1
             }
@@ -427,60 +428,84 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
 
         let pinTotalPhotos = currentPin!.totalPhotos as? Int
 
-
         // Call Flickr to get the photos
-        FlickrClient.sharedInstance().requestFlickrPhotos( latitude, longitude: longitude, newPin: true, pinNumberOfPhotos: pinTotalPhotos, pinID: currentPin!.id!, pin: currentPin!, completionHandler: {documentsArray, success, errorString in
+        FlickrClient.sharedInstance().requestFlickrPhotos( latitude, longitude: longitude, newPin: true, pinNumberOfPhotos: pinTotalPhotos, pinID: currentPin!.id!, pin: currentPin!, completionHandler: {documentsArray, arrayPinID, success, errorString in
 
-            // Loop through the photos, download the photo and set the flickr URL and document filename for each photo
-            for photoIndex in 0...Constants.photosToDisplayOffsetZero {
 
-                let photo = self.fetchedPhotos[photoIndex]
+            dispatch_async(dispatch_get_main_queue(), {
 
-                let flickrThumbnailPath = documentsArray[photoIndex]
+                let fetchRequest = NSFetchRequest(entityName: "Photos")
+                fetchRequest.predicate = NSPredicate(format: "pinsID == %@", arrayPinID)
 
-                if flickrThumbnailPath > " " {
 
-                    // Get flickr photo and save in documents
-                    FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath, photo: photo, completionHandler: {filename in
+                // Sort by photoID which is an ascending date
+                fetchRequest.sortDescriptors = [NSSortDescriptor(key: "photoID", ascending: true)]
 
-                        // Photo downloaded, update the photo record
-                        if filename > " " {
+                do {
+                    // Fetch all the photos so they can be updated once the photo is downloaded.
+
+                    let fetchedPhotosWithPhotos = try self.sharedContext.executeFetchRequest(fetchRequest) as! [Photos]
+
+                    // Determine how many photos were returned
+                    var pinTotalURLLoop = 0
+                    for  arrayItem in documentsArray {
+                        if arrayItem > " " {
+                            ++pinTotalURLLoop
+                        }
+                    }
+
+                    // Loop through the photos, download the photo and set the flickr URL and document filename for each photo
+                    if pinTotalURLLoop > 0 {
+                        for photoIndex in 0...(pinTotalURLLoop - 1) {
+
+                            let photo = fetchedPhotosWithPhotos[photoIndex]
+                            let flickrThumbnailPath = documentsArray[photoIndex]
+
+                            if flickrThumbnailPath > " " {
+
+                                // Get flickr photo and save in documents
+                                FlickrClient.sharedInstance().addPhotoToDocuments(flickrThumbnailPath, photo: photo, completionHandler: {filename in
+
+                                    // Photo downloaded, update the photo record
+                                    if filename > " " {
+                                        dispatch_async(dispatch_get_main_queue(), {
+
+                                            // Set the document and URL names so that the collection can be updated
+                                            photo.documentsThumbnailFileName = filename
+                                            photo.flickrThumbnailPath = flickrThumbnailPath
+                                            CoreDataStackManager.sharedInstance().saveContext()
+                                        })
+                                    }
+                                })
+                            }
+                        }
+                    }
+
+
+                    // Now that we know the actual number of photos, delete unused photos which were added originally to hold activity indicators
+                    if pinTotalURLLoop < Constants.photosToDisplay {
+                        for photoIndex in (pinTotalURLLoop)...Constants.photosToDisplayOffsetZero {
+                            let photo = fetchedPhotosWithPhotos[photoIndex]
 
                             dispatch_async(dispatch_get_main_queue(), {
 
-                                // Set the document and URL names so that the collection can be updated
-                                photo.documentsThumbnailFileName = filename
-                                photo.flickrThumbnailPath = flickrThumbnailPath
-
-                                // Save the data
-                                CoreDataStackManager.sharedInstance().saveContext()
-                            })
-
-                        } else {
-
-                            // Photo ws not downloaded, set the photo to indicate no photo
-                            dispatch_async(dispatch_get_main_queue(), {
-
-                                // Had to first put a non-blank/non-nil value so the collection core
-                                // date .update would be triggered to turn off the activity indicator
-                                photo.documentsThumbnailFileName = "X"
-
-                                // set URL and file name to blanks
-                                photo.resetPhotoDocument()
-
-                                // Save the data
+                                // Delete the photo from core data
+                                self.sharedContext.deleteObject(photo)
                                 CoreDataStackManager.sharedInstance().saveContext()
                             })
                         }
-                    })
+                    }
+                } catch {
+                    // Present an alert to let the user know we could not load photos
+                    self.presentAlert("Unable to Load Photos from Flickr!", includeOK: true )
                 }
-            }
+            })
         })
     }
 
 
 
-    // Build the photos, then fetch so we can update them with the document ID 
+    // Build the photos first.  This is done so that activity indicators are visible while the initial call to Flickr is being done.
     func BuildFetchPhotosForThePin() {
 
         // Update the pin to indicate the load is started, this disables the New Collection button
@@ -492,27 +517,10 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
             let PhotoInsertDictionary: [String : AnyObject] = [
                 Photos.Keys.pinsID : currentPin!.id!
             ]
-
             let _ = Photos(dictionary: PhotoInsertDictionary, context: self.sharedContext)
         }
-
         CoreDataStackManager.sharedInstance().saveContext()
-
-        let fetchRequest = NSFetchRequest(entityName: "Photos")
-        fetchRequest.predicate = NSPredicate(format: "pinsID == %@", currentPin!.id!)
-
-        // Sort by photoID which is an ascending date
-        fetchRequest.sortDescriptors = [NSSortDescriptor(key: "photoID", ascending: true)]
-
-        do {
-            // Fetch the photos
-            fetchedPhotos = try self.sharedContext.executeFetchRequest(fetchRequest) as! [Photos]
-
-        } catch {
-            // Present an alert to let the user know we could not load photos
-            self.presentAlert("Unable to Load Photos from Flickr!", includeOK: true )
-        }
-    }
+     }
 
 
 
@@ -530,8 +538,6 @@ class MapViewController: UIViewController, UINavigationControllerDelegate, MKMap
 
         return fetchedResultsController
     }()
-
-
 
 
     // Called when pin in core data is modified
